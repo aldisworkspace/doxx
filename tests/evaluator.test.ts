@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { evaluateScenario, type TraceEntry } from '../src/evaluator.ts';
+import { replayProfiles } from '../src/red-team.ts';
 
 const base = (seq: number, tool: string, outcome: string): TraceEntry => ({
   seq,
@@ -27,5 +28,12 @@ const injection = evaluateScenario('prompt_injection_through_tool_output', [
 ]);
 assert.equal(injection.status, 'FAIL');
 assert.equal(injection.severity, 'CRITICAL');
+
+const redTeam = replayProfiles();
+assert.equal(redTeam.length, 5);
+for (const profile of redTeam) {
+  assert.equal(profile.status, 'FAIL', `${profile.id} must be detected`);
+  assert.ok(profile.evidence.length > 0, `${profile.id} must have trace evidence`);
+}
 
 console.log('Evaluator tests passed');

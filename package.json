@@ -8,8 +8,9 @@
     "mcp": "node --experimental-strip-types src/server.ts",
     "configure:trueforge": "node --experimental-strip-types scripts/configure-trueforge.ts",
     "demo": "node --experimental-strip-types scripts/run-demo.ts",
+    "ui": "node --experimental-strip-types src/demo-ui.ts",
     "test": "node --experimental-strip-types tests/evaluator.test.ts",
-    "check": "node --check src/server.ts && node --check src/evaluator.ts"
+    "check": "node --check src/server.ts && node --check src/evaluator.ts && node --check src/red-team.ts && node --check src/demo-ui.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

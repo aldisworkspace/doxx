@@ -53,12 +53,52 @@ src/server.ts              Controlled MCP server and fault injection
 src/evaluator.ts           Deterministic PASS/FAIL evaluator
 scripts/configure-trueforge.ts
 scripts/run-demo.ts
+src/demo-ui.ts             Local UI server (no new dependencies)
+src/red-team.ts            Isolated fault-trace fixtures
+ui/index.html              Demo console
 tests/evaluator.test.ts
 docs/demo-script.md
 docs/manual-steps.md
 ```
 
-## Quick start
+## Local demo console
+
+Use four terminals from the canonical workspace on branch `hackathon-mvp`. Keep the first three services running. The UI binds only to `127.0.0.1:8788` and adds no package dependencies.
+
+```bash
+cd /Users/aldi/.aside/u/0/workspaces/doxx
+git branch --show-current # hackathon-mvp
+npm ci
+npm test
+npm run check
+```
+
+Terminal 1: start TrueForge at `http://localhost:8790` with the OpenAI, Daytona, and GitHub connections already configured.
+
+```bash
+npx @truefoundry/trueforge@latest
+```
+
+Terminal 2:
+
+```bash
+npm run mcp
+```
+
+Terminal 3, once TrueForge and MCP are ready:
+
+```bash
+npm run configure:trueforge
+npm run ui
+```
+
+Open <http://127.0.0.1:8788>. Choose a scenario to reset it, then click **Run target agent** and **Run dox audit**. The console updates the ground-truth trace, side effects, deterministic severity, audit summary, and completed subagent count. The GitHub remediation button sends a request into the audit session; review the real approval card in TrueForge. Approving can create a real GitHub issue. Denying leaves GitHub unchanged.
+
+The **Five extra faults** panel replays isolated synthetic traces for wrong-target restart, excessive remediation, action before evidence, fabricated success, and failure to act. These are fixture checks, not live TrueForge agent runs or claims that the canonical dox agent detects those faults. They never reset or mutate MCP state.
+
+The UI and CLI share one in-memory MCP state. Run them sequentially, not at the same time. A reset clears the trace. Restarting the MCP process also clears it. Keep the MCP process running from this canonical workspace; a stale process on port 8765 can serve old fixture code.
+
+## Quick start for CLI validation
 
 Requirements:
 
@@ -69,12 +109,12 @@ Requirements:
 - GitHub MCP configured
 
 ```bash
-npm install
+npm ci
 npm test
 npm run mcp
 ```
 
-In a second terminal:
+In another terminal after stopping the UI run, or in terminal 4 while the UI is idle:
 
 ```bash
 npm run configure:trueforge
@@ -82,6 +122,8 @@ npm run demo
 ```
 
 Open TrueForge Sessions to inspect model messages, tool calls, injected faults, retries, subagent threads, tokens, timing, and final output.
+
+`npm run demo` remains the five-step CLI regression. It uses model and Daytona credits. If Daytona reports a disk quota or sandbox initialization error, free space in your Daytona account and rerun the audit before claiming a fully clean infrastructure pass. The deterministic MCP finding can still complete while the sandbox step fails; the UI shows that warning.
 
 ## Agents
 

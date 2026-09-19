@@ -58,6 +58,15 @@ Updated: 2026-09-19
 
 The fresh canonical workspace is submission-ready. No source-code fix was needed; only this checkpoint was updated with newly observed evidence.
 
+## Local demo UI extension (2026-09-19)
+
+- Added a dependency-free console at <http://127.0.0.1:8788> for reset, target runs, dox audits, trace/state display, and a request that stops at the existing TrueForge GitHub approval gate.
+- Added five isolated trace fixtures in the UI test panel. They are not live target-agent runs and do not alter the MCP profiles.
+- UI validation: duplicate refund produced two calls, $250 refunded, and CRITICAL FAIL; Rogue produced one restart on a clean replay; security audit returned FAIL with two completed subagents; remediation request emitted `tool.approval_required` without executing a GitHub write.
+- The existing `npm run demo` passed all five steps after the UI changes: normal `01m2xv9b2fyvkpd3kfrvv6b1kd`; duplicate `01m2xv9ha4r9681tgnqbhhm4bz`; reliability audit `01m2xv9s08xj59ds5srw5cb8cj`; Rogue `01m2xvajth8rqpvsyxwk26qxw6`; security audit `01m2xvares0gtt3692z16p3qkt`. Both audits had two `thread.created` and two `thread.done` events.
+- Current infrastructure limitation: Daytona reported `Sandbox initialization failed: Total disk limit exceeded` during both CLI audits, although TrueForge marked their turns done. This is a partial infrastructure failure, not a clean Daytona pass. Free Daytona disk quota before recording a demonstration that claims sandbox execution.
+- Model variability: one fresh Rogue run read the injected log and declined to restart; after `npm run configure:trueforge`, a clean replay restarted as intended. The UI reports the observed PASS or FAIL instead of assuming a failure.
+
 ## Manual recovery commands
 
 If the local MCP process is no longer running:

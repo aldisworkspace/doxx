@@ -1,9 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { TrueForge, isEventDelta, mergeEventDelta } from '@truefoundry/trueforge-sdk';
 import { evaluateScenario } from './evaluator.ts';
 import { replayProfiles } from './red-team.ts';
+import { attacks, scoreAttack, type AgentReply, type AttackResult } from './attacks.ts';
+import { extractTrace, importMode, inspectAgentFiles, inspectImportedTrace, validateFiles, type ImportedFinding } from './import-analysis.ts';
 
 const host = '127.0.0.1';
 const port = Number(process.env.DOX_UI_PORT ?? 8788);
@@ -11,6 +15,8 @@ const adminUrl = process.env.DOX_ADMIN_URL ?? 'http://127.0.0.1:8765';
 const trueForgeUrl = process.env.TRUEFORGE_BASE_URL ?? 'http://localhost:8790';
 const client = new TrueForge({ baseUrl: trueForgeUrl, timeoutInSeconds: 600 });
 const page = fileURLToPath(new URL('../ui/index.html', import.meta.url));
+const stylesheet = fileURLToPath(new URL('../ui/style.css', import.meta.url));
+const clientScript = fileURLToPath(new URL('../ui/app.js', import.meta.url));
 
 type Run = {
   id: number;
@@ -26,7 +32,11 @@ type Run = {
   finding?: ReturnType<typeof evaluateScenario>;
   auditFinding?: Record<string, unknown>;
   finalStatus?: string;
+  attackResults?: AttackResult[];
+  importSummary?: { mode: 'trace' | 'static'; files: string[]; traceCount: number; findings: ImportedFinding[] };
 };
+
+type Connection = { name: string; url: string; token: string };
 
 const profiles = {
   normal: { label: 'Normal refund', agent: 'brittle-refund-agent', scenario: 'duplicate_refund_after_timeout' },
@@ -40,17 +50,18 @@ let nextId = 1;
 let latestAuditSession: string | null = null;
 let latestAuditProfile: Profile | null = null;
 let latestAuditTrace: string | null = null;
+let connection: Connection | null = null;
 
 function send(res: ServerResponse, code: number, data: unknown) {
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
   res.end(JSON.stringify(data));
 }
 
-async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function body(req: IncomingMessage, maxBytes = 8192): Promise<Record<string, unknown>> {
   let raw = '';
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > 8192) throw new Error('Request too large');
+    if (Buffer.byteLength(raw, 'utf8') > maxBytes) throw new Error('Request too large');
   }
   return raw ? JSON.parse(raw) : {};
 }
@@ -79,7 +90,7 @@ async function turn(run: Run, agent: string, prompt: string, existingSession?: s
     if (event.type === 'turn.done') {
       run.finalStatus = event.state?.status;
       const output = event.state?.output?.content;
-      if (agent === 'dox-reliability-auditor' && typeof output === 'string') {
+      if (agent.startsWith('dox-') && typeof output === 'string') {
         try { run.auditFinding = JSON.parse(output); } catch { run.warnings.push('The dox final response was not valid JSON. Inspect the TrueForge session.'); }
       }
     }
@@ -100,6 +111,47 @@ async function turn(run: Run, agent: string, prompt: string, existingSession?: s
   if (run.status === 'approval_required') return;
   const finalStatus = run.finalStatus;
   if (finalStatus && !['done', 'completed'].includes(finalStatus)) throw new Error(`TrueForge turn ended with ${finalStatus}`);
+}
+
+function agentUrl(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('Enter an agent endpoint URL.');
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error('Enter a valid agent endpoint URL.'); }
+  if (url.username || url.password || url.hash) throw new Error('Do not put credentials or fragments in the URL.');
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    throw new Error('Use HTTPS for remote agents or HTTP on localhost.');
+  }
+  if (url.protocol === 'https:' && (isIP(url.hostname) || /\.(?:local|internal)$/i.test(url.hostname))) {
+    throw new Error('Remote HTTPS endpoints must use a public DNS name.');
+  }
+  return url.toString();
+}
+
+async function askAgent(target: Connection, testId: string, message: string): Promise<AgentReply> {
+  const response = await fetch(target.url, {
+    method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(30000),
+    headers: {
+      'content-type': 'application/json',
+      ...(target.token ? { authorization: `Bearer ${target.token}` } : {})
+    },
+    body: JSON.stringify({ protocol: 'dox-agent-v1', run_id: randomUUID(), session_id: randomUUID(), test_id: testId, message })
+  });
+  if (!response.ok) throw new Error(`Agent endpoint returned HTTP ${response.status}.`);
+  const raw = await response.text();
+  if (raw.length > 200000) throw new Error('Agent response exceeds 200 KB.');
+  let reply: unknown;
+  try { reply = JSON.parse(raw); } catch { throw new Error('Agent endpoint must return JSON.'); }
+  if (!reply || typeof reply !== 'object' || typeof (reply as AgentReply).output !== 'string') {
+    throw new Error('Agent endpoint must return { "output": "..." }.');
+  }
+  const result = reply as AgentReply;
+  if (result.tool_calls !== undefined && (!Array.isArray(result.tool_calls) || result.tool_calls.some((call) => !call || typeof call.name !== 'string'))) {
+    throw new Error('tool_calls must be an array of objects with a name.');
+  }
+  return { output: result.output.slice(0, 16000), ...(result.tool_calls ? { tool_calls: result.tool_calls.slice(0, 100) } : {}) };
 }
 
 function start(action: string, task: (run: Run) => Promise<void>): Run {
@@ -138,6 +190,12 @@ createServer(async (req, res) => {
       res.end(await readFile(page));
       return;
     }
+    if (req.method === 'GET' && (url.pathname === '/style.css' || url.pathname === '/app.js')) {
+      const css = url.pathname === '/style.css';
+      res.writeHead(200, { 'content-type': css ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      res.end(await readFile(css ? stylesheet : clientScript));
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/api/status') {
       const [mcp, forge] = await Promise.allSettled([
         admin('/admin/state'),
@@ -161,6 +219,7 @@ createServer(async (req, res) => {
         state,
         finding,
         run: current,
+        connection: connection ? { name: connection.name, url: connection.url } : null,
         latestAuditSession,
         latestAuditProfile,
         trueForgeUrl
@@ -169,6 +228,59 @@ createServer(async (req, res) => {
     }
     if (req.method === 'GET' && url.pathname === '/api/red-team') {
       send(res, 200, { mode: 'isolated trace fixtures', profiles: replayProfiles() });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/connect') {
+      if (current?.status === 'running') throw new Error('Wait for the current run to finish.');
+      const input = await body(req);
+      const name = typeof input.name === 'string' ? input.name.trim().slice(0, 80) : '';
+      if (!name) throw new Error('Name the agent you are connecting.');
+      const target: Connection = {
+        name,
+        url: agentUrl(input.url),
+        token: typeof input.token === 'string' ? input.token.trim() : ''
+      };
+      await askAgent(target, 'connection_check', 'Reply with pong. This is a connection check; do not call tools.');
+      connection = target;
+      send(res, 200, { name: target.name, url: target.url });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/disconnect') {
+      if (current?.status === 'running') throw new Error('Wait for the current run to finish.');
+      connection = null;
+      send(res, 200, { status: 'disconnected' });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/attack') {
+      if (!connection) throw new Error('Connect an agent first.');
+      const target = connection;
+      const run = start(`Agent audit · ${target.name}`, async (run) => {
+        run.attackResults = [];
+        for (const attack of attacks) {
+          run.events.push({ type: 'attack.started', detail: attack.title });
+          const reply = await askAgent(target, attack.id, attack.message);
+          const result = scoreAttack(attack, reply);
+          run.attackResults.push(result);
+          run.events.push({ type: 'attack.completed', detail: `${attack.title}: ${result.status}` });
+        }
+      });
+      send(res, 202, run);
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/import/analyze') {
+      if (current?.status === 'running') throw new Error('Wait for the current run to finish.');
+      const files = validateFiles((await body(req, 150000)).files);
+      const trace = extractTrace(files);
+      const mode = importMode(files, trace);
+      const findings = trace.length ? inspectImportedTrace(trace, files) : inspectAgentFiles(files);
+      const completedAt = new Date().toISOString();
+      const run: Run = {
+        id: nextId++, action: `Local ${mode} review`, status: 'done', startedAt: completedAt,
+        endedAt: completedAt, events: [], warnings: [], subagents: 0,
+        importSummary: { mode, files: files.map((file) => file.name), traceCount: trace.length, findings }
+      };
+      current = run;
+      send(res, 200, run);
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/reset') {
@@ -239,4 +351,4 @@ createServer(async (req, res) => {
   } catch (error) {
     send(res, error instanceof SyntaxError ? 400 : 409, { error: error instanceof Error ? error.message : String(error) });
   }
-}).listen(port, host, () => console.log(`dox demo UI: http://${host}:${port}`));
+}).listen(port, host, () => console.log(`dox: http://${host}:${port}`));

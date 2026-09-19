@@ -9,8 +9,9 @@
     "configure:trueforge": "node --experimental-strip-types scripts/configure-trueforge.ts",
     "demo": "node --experimental-strip-types scripts/run-demo.ts",
     "ui": "node --experimental-strip-types src/demo-ui.ts",
-    "test": "node --experimental-strip-types tests/evaluator.test.ts",
-    "check": "node --check src/server.ts && node --check src/evaluator.ts && node --check src/red-team.ts && node --check src/demo-ui.ts"
+    "sample-agent": "node --experimental-strip-types scripts/sample-agent.ts",
+    "test": "node --experimental-strip-types tests/evaluator.test.ts && node --experimental-strip-types tests/onboarding.test.ts",
+    "check": "node --check src/server.ts && node --check src/evaluator.ts && node --check src/red-team.ts && node --check src/attacks.ts && node --check src/import-analysis.ts && node --check src/demo-ui.ts && node --check scripts/sample-agent.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

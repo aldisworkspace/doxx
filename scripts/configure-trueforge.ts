@@ -22,7 +22,7 @@ async function upsertConnector() {
   };
   const existing = await request('/api/v1/settings/mcp-servers');
   const found = existing.data.find((item: { name: string }) => item.name === manifest.name);
-  await request(found ? `/api/v1/settings/mcp-servers/${manifest.name}` : '/api/v1/settings/mcp-servers', {
+  await request('/api/v1/settings/mcp-servers', {
     method: found ? 'PUT' : 'POST',
     body: JSON.stringify({ manifest })
   });
@@ -32,7 +32,7 @@ async function upsertSkill(name: string, path: string, description: string) {
   const manifest = { type: 'git', name, url: repo, path, ref: 'hackathon-mvp', description };
   const existing = await request('/api/v1/settings/skills');
   const found = existing.data.find((item: { name: string }) => item.name === name);
-  await request(found ? `/api/v1/settings/skills/${name}` : '/api/v1/settings/skills', {
+  await request('/api/v1/settings/skills', {
     method: found ? 'PUT' : 'POST',
     body: JSON.stringify({ manifest })
   });

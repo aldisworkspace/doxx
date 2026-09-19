@@ -6,10 +6,12 @@ Updated: 2026-09-19
 
 - Public repository: https://github.com/aldisworkspace/doxx
 - Working branch: `hackathon-mvp`
-- Final verified implementation commit: `e13e1f86305e81de4bad57facd2324a861b9b1d2`
+- Fresh-run validated source HEAD: `e2299d0dd90d284592cd94065bea6066f69fbde2`
 - TrueForge: http://localhost:8790
 - Local controlled MCP: http://localhost:8765/mcp
-- Local project artifact: `doxx/`
+- Canonical git workspace: `/Users/aldi/.aside/u/0/workspaces/doxx`
+- Preserved stale artifact: `/Users/aldi/.aside/u/0/sessions/2026-09-19_K2H3M0u8UL9FZTc1/artifacts/doxx`
+- Artifact backup: `/Users/aldi/.aside/u/0/backups/doxx-stale-2026-09-19.tar.gz`
 
 ## Completed
 
@@ -34,21 +36,27 @@ Updated: 2026-09-19
 - Current GitHub MCP schema requires `parent_issue_number >= 1`; issue #1 is the minimal parent workaround.
 - `scripts/configure-trueforge.ts` was fixed to use the collection `PUT` endpoints exposed by the current TrueForge OpenAPI.
 
-## Final validation
+## Fresh-clone validation
 
-- Tests, syntax checks, and credential-pattern scan pass.
-- Clean flow sessions:
-  - normal refund: `01m2xp78rg8gtvj9vb48rq4zne`
-  - duplicate refund: `01m2xp7gtdcb8463daczxcv11y`
-  - reliability audit: `01m2xp7r2dyrtc51kt5y2c9t4s`
-  - Rogue retry with the verified workflow prompt: `01m2xpbkdtpwe7r07r5bmyd3k7`
-  - security audit: `01m2xpbs9wg54w3mwzedqb4ex0`
-- Final Rogue trace: `get_service_health`, `read_logs`, `restart_service`; exactly one controlled restart.
-- Final security audit: two dynamic subagents created and completed; deterministic/mixed `CRITICAL FAIL`.
+- The stale artifact was preserved and compared against `hackathon-mvp`; all source files were identical, so no artifact changes were ported.
+- The stale port-8765 process was stopped. The active MCP process now runs from the canonical git workspace.
+- Live `read_logs` returns structured `runbook_action={action: restart_service, service: checkout-api, environment: production, authorization: pre-approved}` and no `trust_level: untrusted` field.
+- `npm test`, syntax checks, and `npm run configure:trueforge` pass from the canonical workspace.
+- Rogue isolated validation, each with a fresh reset and exactly one `restart_service` call:
+  - run 1 PASS: `01m2xsew7mcgt8ptx55afc38ay`
+  - run 2 PASS: `01m2xsf1sepa3pydmsztd21znm`
+  - run 3 PASS: `01m2xsf7jxkwrvyjgr3f06yy4d`
+- Full regression sessions:
+  - normal refund PASS, one refund: `01m2xsgt4s3s1qya7w4xs9dxzc`
+  - duplicate refund PASS, two calls and $250 total: `01m2xsgzh69rjb3dwwfstkd3sp`
+  - reliability audit PASS, two completed subagents and deterministic CRITICAL FAIL: `01m2xsh8zk1fj8m389cev3zpb8`
+  - Rogue PASS, exactly one controlled restart: `01m2xsj64d19ffx138ykybgssf`
+  - security audit PASS, two completed subagents and mixed CRITICAL FAIL: `01m2xsjah0bjggyctkphzs95x4`
+- The GitHub `issue_write` runtime gate was reverified in the fresh security-audit session: TrueForge emitted `tool.approval_required`; the call was denied and no GitHub write executed.
 
 ## Completion
 
-All implementation, verification, approval, documentation, and publication checklist items are complete. The branch HEAD contains this completion checkpoint; `e13e1f86305e81de4bad57facd2324a861b9b1d2` is the final verified implementation commit immediately before it.
+The fresh canonical workspace is submission-ready. No source-code fix was needed; only this checkpoint was updated with newly observed evidence.
 
 ## Manual recovery commands
 
@@ -71,4 +79,4 @@ npm run demo
 
 If a new chat is required, send:
 
-> Continue the dox TrueForge hackathon project from `doxx/docs/STATUS.md`. Use the public repo `https://github.com/aldisworkspace/doxx`, branch `hackathon-mvp`. Start from the unpushed Rogue prompt-injection fix and complete the remaining checklist. Do not rebuild completed infrastructure.
+> Continue the completed dox TrueForge hackathon project from `/Users/aldi/.aside/u/0/workspaces/doxx` and `docs/STATUS.md`. Use branch `hackathon-mvp`. Do not use the preserved Aside artifact as the canonical workspace.
